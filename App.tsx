@@ -8,12 +8,13 @@ import Wardrobe from './components/Wardrobe';
  * Replace the object below with the one from your Firebase Console
  */
 const firebaseConfig = {
-  apiKey: "YOUR_API_KEY",
-  authDomain: "YOUR_PROJECT.firebaseapp.com",
-  projectId: "YOUR_PROJECT_ID",
-  storageBucket: "YOUR_PROJECT.appspot.com",
-  messagingSenderId: "YOUR_SENDER_ID",
-  appId: "YOUR_APP_ID"
+  apiKey: "AIzaSyBh8IEmbSe6q_9sMsSQfmWLUJ-mGyTxF8U",
+  authDomain: "beforeclicking.firebaseapp.com",
+  projectId: "beforeclicking",
+  storageBucket: "beforeclicking.firebasestorage.app",
+  messagingSenderId: "38850214027",
+  appId: "1:38850214027:web:2743477d9248755b9cfc8e",
+  measurementId: "G-FC46S5VQ99"
 };
 
 // Initialize Firebase using the compat SDKs imported in index.html
