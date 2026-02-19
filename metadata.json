@@ -1,0 +1,7 @@
+{
+  "name": "BeforeClicking",
+  "description": "A premium virtual fashion styling platform that uses AI vision to extract clothing items from photos and lets users try before they buy.",
+  "requestFramePermissions": [
+    "camera"
+  ]
+}
