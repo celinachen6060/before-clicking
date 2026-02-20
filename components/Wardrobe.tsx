@@ -1,4 +1,3 @@
-
 import React, { useState, useRef } from 'react';
 import { extractClothingMetadata, generateSmartOutfit } from '../services/geminiService';
 import { Category, ClothingItem, BoundingBox, SmartOutfitResponse } from '../types';
@@ -30,26 +29,40 @@ const Wardrobe: React.FC<WardrobeProps> = ({ onSelectItem, wardrobeItems, setWar
   const cropImage = (imageSrc: string, box: BoundingBox): Promise<string> => {
     return new Promise((resolve) => {
       const img = new Image();
+      // 处理图片加载失败的情况
+      img.onerror = () => {
+        console.error('图片加载失败');
+        resolve('');
+      };
+      
       img.onload = () => {
         const canvas = document.createElement('canvas');
         const ctx = canvas.getContext('2d');
-        if (!ctx) return resolve('');
+        if (!ctx) {
+          console.error('Canvas 上下文获取失败');
+          return resolve('');
+        }
 
-        const x = (box.xmin / 100) * img.width;
-        const y = (box.ymin / 100) * img.height;
-        const width = ((box.xmax - box.xmin) / 100) * img.width;
-        const height = ((box.ymax - box.ymin) / 100) * img.height;
+        try {
+          const x = (box.xmin / 100) * img.width;
+          const y = (box.ymin / 100) * img.height;
+          const width = ((box.xmax - box.xmin) / 100) * img.width;
+          const height = ((box.ymax - box.ymin) / 100) * img.height;
 
-        const padding = 0.05; 
-        const px = Math.max(0, x - width * padding);
-        const py = Math.max(0, y - height * padding);
-        const pw = Math.min(img.width - px, width * (1 + padding * 2));
-        const ph = Math.min(img.height - py, height * (1 + padding * 2));
+          const padding = 0.05; 
+          const px = Math.max(0, x - width * padding);
+          const py = Math.max(0, y - height * padding);
+          const pw = Math.min(img.width - px, width * (1 + padding * 2));
+          const ph = Math.min(img.height - py, height * (1 + padding * 2));
 
-        canvas.width = pw;
-        canvas.height = ph;
-        ctx.drawImage(img, px, py, pw, ph, 0, 0, pw, ph);
-        resolve(canvas.toDataURL('image/png'));
+          canvas.width = pw;
+          canvas.height = ph;
+          ctx.drawImage(img, px, py, pw, ph, 0, 0, pw, ph);
+          resolve(canvas.toDataURL('image/png'));
+        } catch (error) {
+          console.error('图片裁剪失败:', error);
+          resolve('');
+        }
       };
       img.src = imageSrc;
     });
@@ -59,30 +72,84 @@ const Wardrobe: React.FC<WardrobeProps> = ({ onSelectItem, wardrobeItems, setWar
     const file = event.target.files?.[0];
     if (!file) return;
 
+    // 验证文件类型
+    if (!file.type.startsWith('image/')) {
+      alert('请上传有效的图片文件');
+      return;
+    }
+
     setIsProcessing(true);
-    const reader = new FileReader();
-    reader.onload = async (e) => {
-      const base64 = e.target?.result as string;
-      const items = await extractClothingMetadata(base64);
+    
+    try {
+      const base64 = await new Promise<string>((resolve, reject) => {
+        const reader = new FileReader();
+        reader.onload = (e) => {
+          const result = e.target?.result as string;
+          if (result) resolve(result);
+          else reject(new Error('文件读取失败'));
+        };
+        reader.onerror = () => reject(new Error('文件读取出错'));
+        reader.readAsDataURL(file);
+      });
 
-      const newItems: ClothingItem[] = [];
-      for (const item of items) {
-        const cropped = await cropImage(base64, item.boundingBox);
-        newItems.push({
-          id: Math.random().toString(36).substr(2, 9),
-          category: item.category as Category,
-          description: `${item.color} ${item.subcategory}`,
-          imageBlob: cropped,
-          originalImage: base64,
-          boundingBox: item.boundingBox,
-        });
+      // 调用API提取衣物信息，增加超时控制
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), 30000); // 30秒超时
+      
+      try {
+        const items = await extractClothingMetadata(base64, { signal: controller.signal });
+        clearTimeout(timeoutId);
+
+        if (!items || items.length === 0) {
+          alert('未能从图片中识别出衣物，请尝试其他图片');
+          setIsProcessing(false);
+          return;
+        }
+
+        const newItems: ClothingItem[] = [];
+        for (const item of items) {
+          // 验证category类型
+          if (!Object.values(Category).includes(item.category as Category)) {
+            console.warn(`未知的衣物分类: ${item.category}`);
+            continue;
+          }
+          
+          const cropped = await cropImage(base64, item.boundingBox);
+          if (!cropped) continue; // 跳过裁剪失败的项目
+          
+          newItems.push({
+            id: Math.random().toString(36).substr(2, 9),
+            category: item.category as Category,
+            description: `${item.color || '未知颜色'} ${item.subcategory || '未知类型'}`,
+            imageBlob: cropped,
+            originalImage: base64,
+            boundingBox: item.boundingBox,
+          });
+        }
+
+        if (newItems.length > 0) {
+          setWardrobeItems((prev) => [...newItems, ...prev]);
+          alert(`成功识别出 ${newItems.length} 件衣物`);
+        } else {
+          alert('未能提取到有效的衣物信息');
+        }
+      } catch (apiError) {
+        console.error('提取衣物信息失败:', apiError);
+        if ((apiError as Error).name === 'AbortError') {
+          alert('请求超时，请检查网络或稍后重试');
+        } else {
+          alert('提取衣物信息失败: ' + (apiError as Error).message);
+        }
       }
-
-      setWardrobeItems((prev) => [...newItems, ...prev]);
+    } catch (fileError) {
+      console.error('文件处理失败:', fileError);
+      alert('文件处理失败: ' + (fileError as Error).message);
+    } finally {
+      // 确保无论成功失败都重置加载状态
       setIsProcessing(false);
-    };
-    reader.readAsDataURL(file);
-    if (event.target) event.target.value = '';
+      // 清空文件输入
+      if (event.target) event.target.value = '';
+    }
   };
 
   const handleGenerateOutfit = async () => {
@@ -92,8 +159,8 @@ const Wardrobe: React.FC<WardrobeProps> = ({ onSelectItem, wardrobeItems, setWar
       const result = await generateSmartOutfit(wardrobeItems, selectedStyle);
       setGeneratedOutfit(result);
     } catch (error) {
-      console.error(error);
-      alert("Failed to generate outfit recommendations.");
+      console.error('生成穿搭失败:', error);
+      alert("Failed to generate outfit recommendations: " + (error as Error).message);
     } finally {
       setIsGeneratingOutfit(false);
     }
