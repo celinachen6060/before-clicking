@@ -46,26 +46,9 @@ const App: React.FC = () => {
       return;
     }
 
-    // Only attempt complex auth operations if we are on a supported protocol
     if (isWebProtocol) {
-      // Set persistence to SESSION to handle restricted environments (like iframes)
       auth.setPersistence(fb.auth.Auth.Persistence.SESSION).catch((err: any) => {
         console.debug("Persistence setting not supported in this environment.", err.message);
-      });
-
-      // Handle the result of a redirect login
-      auth.getRedirectResult().then((result: any) => {
-        if (result.user) {
-          console.log("Successfully logged in via redirect", result.user);
-        }
-      }).catch((error: any) => {
-        // Only log to error if it's NOT the expected environment error
-        if (error.code === 'auth/operation-not-supported-in-this-environment') {
-          console.warn("Firebase Auth redirect not supported on this protocol/environment.");
-          setAuthError("Environment restricted: Google Login requires a web server (http/https).");
-        } else {
-          console.error("Redirect login error:", error);
-        }
       });
     } else {
       setAuthError("Standard login is unavailable on 'file://'. Please use Guest Mode.");
@@ -126,9 +109,26 @@ const App: React.FC = () => {
     setAuthError(null);
 
     if (!isWebProtocol) {
-      setAuthError("Cannot login via 'file://' protocol. Please use 'Guest Mode' or run via a local server.");
+      setAuthError("Cannot login via 'file://' protocol. Please use 'Guest Mode'.");
       return;
     }
+
+    const provider = new fb.auth.GoogleAuthProvider();
+    try {
+      const result = await auth.signInWithPopup(provider);
+      if (result.user) {
+        console.log("Login Success:", result.user);
+      }
+    } catch (e: any) {
+      console.error("Login failed", e);
+      if (e.code === 'auth/popup-closed-by-user') {
+      } else if (e.code === 'auth/blocked-at-popup-request') {
+        setAuthError("浏览器拦截了弹窗，请点击地址栏右侧图标允许弹窗。");
+      } else {
+        setAuthError(`登录失败: ${e.message}`);
+      }
+    }
+  };
 
     const provider = new fb.auth.GoogleAuthProvider();
     try {
