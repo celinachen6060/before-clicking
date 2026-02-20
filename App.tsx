@@ -3,10 +3,6 @@ import { ViewState, Outfit, ClothingItem, Category } from './types';
 import ModelViewer from './components/ModelViewer';
 import Wardrobe from './components/Wardrobe';
 
-/**
- * FIREBASE CONFIGURATION
- * Replace the object below with the one from your Firebase Console
- */
 const firebaseConfig = {
   apiKey: "AIzaSyBh8IEmbSe6q_9sMsSQfmWLUJ-mGyTxF8U",
   authDomain: "beforeclicking.firebaseapp.com",
@@ -17,7 +13,6 @@ const firebaseConfig = {
   measurementId: "G-FC46S5VQ99"
 };
 
-// Initialize Firebase using the compat SDKs imported in index.html
 const fb = (window as any).firebase;
 if (fb && !fb.apps.length) {
   fb.initializeApp(firebaseConfig);
@@ -36,10 +31,8 @@ const App: React.FC = () => {
   const [syncing, setSyncing] = useState(false);
   const [authError, setAuthError] = useState<string | null>(null);
 
-  // Environment Compatibility Check
   const isWebProtocol = ['http:', 'https:', 'chrome-extension:'].includes(window.location.protocol);
 
-  // Auth State Observer
   useEffect(() => {
     if (!auth) {
       setLoading(false);
@@ -47,8 +40,8 @@ const App: React.FC = () => {
     }
 
     if (isWebProtocol) {
-      auth.setPersistence(fb.auth.Auth.Persistence.SESSION).catch((err: any) => {
-        console.debug("Persistence setting not supported in this environment.", err.message);
+      auth.setPersistence(fb.auth.Auth.Persistence.LOCAL).catch((err: any) => {
+        console.debug("Persistence setting not supported.", err.message);
       });
     } else {
       setAuthError("Standard login is unavailable on 'file://'. Please use Guest Mode.");
@@ -64,18 +57,24 @@ const App: React.FC = () => {
     return () => unsubscribe();
   }, [isWebProtocol]);
 
-  // Fetch data from Firestore on login
   const loadUserData = async (uid: string) => {
-// 强行放行：不论数据库状态如何，立刻显示主界面
-setLoading(false);
+    if (!db) return;
+    try {
+      const doc = await db.collection('users').doc(uid).collection('data').doc('current_session').get();
+      if (doc.exists) {
+        const data = doc.data();
+        if (data?.wardrobeItems) setWardrobeItems(data.wardrobeItems);
+        if (data?.outfit) setOutfit(data.outfit);
+        if (data?.baseModelImage) setBaseModelImage(data.baseModelImage);
+      }
+    } catch (e) {
+      console.error("Cloud load error:", e);
+    }
+  };
 
-};
-
-  // Background Cloud Sync (Auto-save)
   useEffect(() => {
-    // Only sync if it's a real logged-in user and not a guest
     if (!user || !db || user.isAnonymous) return;
-    
+
     const syncTimeout = setTimeout(async () => {
       setSyncing(true);
       try {
@@ -100,42 +99,26 @@ setLoading(false);
     setAuthError(null);
 
     if (!isWebProtocol) {
-      setAuthError("Cannot login via 'file://' protocol. Please use 'Guest Mode'.");
+      setAuthError("Cannot login via 'file://' protocol. Please use Guest Mode.");
       return;
     }
 
     const provider = new fb.auth.GoogleAuthProvider();
     try {
-      const result = await auth.signInWithPopup(provider);
-      if (result.user) {
-        console.log("Login Success:", result.user);
-      }
+      await auth.signInWithPopup(provider);
     } catch (e: any) {
       console.error("Login failed", e);
       if (e.code === 'auth/popup-closed-by-user') {
-      } else if (e.code === 'auth/blocked-at-popup-request') {
-        setAuthError("浏览器拦截了弹窗，请点击地址栏右侧图标允许弹窗。");
+        // user closed popup, do nothing
+      } else if (e.code === 'auth/popup-blocked') {
+        setAuthError("浏览器拦截了弹窗，请允许弹窗后重试。");
       } else {
         setAuthError(`登录失败: ${e.message}`);
       }
     }
   };
 
-    const provider = new fb.auth.GoogleAuthProvider();
-    try {
-      await auth.signInWithRedirect(provider);
-    } catch (e: any) {
-      console.error("Login call failed", e);
-      if (e.code === 'auth/operation-not-supported-in-this-environment') {
-        setAuthError("This browser environment does not support Google Login. Please use Guest Mode.");
-      } else {
-        alert("Login could not be initiated.");
-      }
-    }
-  };
-
   const handleGuestLogin = () => {
-    // Mock user for local testing if the environment is restricted
     setUser({
       uid: 'guest_user',
       displayName: 'Guest Stylist',
@@ -229,9 +212,9 @@ setLoading(false);
           <p className="text-sm text-[#888888] font-medium leading-relaxed mb-10 px-4">
             Sign in to access your digital wardrobe and try on looks virtually.
           </p>
-          
+
           <div className="space-y-3 w-full">
-            <button 
+            <button
               onClick={handleLogin}
               disabled={!isWebProtocol}
               className={`w-full py-4 rounded-2xl flex items-center justify-center gap-4 font-bold text-sm transition-all active:scale-95 ${!isWebProtocol ? 'bg-[#EEECE8] text-[#D1CFCA] cursor-not-allowed' : 'bg-white border border-[#EEECE8] text-[#1A1A1A] shadow-sm hover:shadow-md'}`}
@@ -245,7 +228,7 @@ setLoading(false);
               Google Sign In
             </button>
 
-            <button 
+            <button
               onClick={handleGuestLogin}
               className="w-full bg-[#1A1A1A]/5 text-[#1A1A1A] py-4 rounded-2xl flex items-center justify-center gap-2 font-bold text-sm transition-all hover:bg-[#1A1A1A]/10"
             >
@@ -259,7 +242,7 @@ setLoading(false);
                 <i className="fas fa-info-circle"></i> Connection Insight
               </p>
               <p className="text-[11px] text-orange-800 mt-1 leading-relaxed">
-                {authError} 
+                {authError}
                 <br/><br/>
                 <span className="font-bold">Recommendation:</span> Use <span className="underline italic">Guest Mode</span> to use the styling features immediately. Cloud sync requires a standard web environment.
               </p>
@@ -273,7 +256,7 @@ setLoading(false);
   return (
     <div className="h-[100dvh] bg-[#FAF9F7] text-[#1A1A1A] flex flex-col relative overflow-hidden">
       <div className="flex-1 flex flex-col w-full max-w-[480px] mx-auto bg-white md:shadow-[0_0_40px_rgba(0,0,0,0.03)] relative h-full overflow-hidden">
-        
+
         <header className="flex-shrink-0 px-5 py-3 flex justify-between items-center bg-white border-b border-[#EEECE8] z-40">
           <div className="flex items-center gap-2">
             <div className="w-7 h-7 bg-[#1A1A1A] rounded-full flex items-center justify-center text-white">
@@ -291,7 +274,7 @@ setLoading(false);
               </p>
             </div>
           </div>
-          
+
           <div className="flex items-center gap-2">
             <button onClick={resetAll} className="w-8 h-8 flex items-center justify-center rounded-lg hover:bg-[#FAF9F7] text-[#888888]">
               <i className="fas fa-trash-alt text-[10px]"></i>
@@ -301,7 +284,7 @@ setLoading(false);
             </button>
             <div className="w-[1px] h-4 bg-[#EEECE8] mx-1"></div>
             <div className="flex items-center gap-1">
-              <img src={user.photoURL} className="w-7 h-7 rounded-full border border-[#EEECE8]" />
+              <img src={user.photoURL} className="w-7 h-7 rounded-full border border-[#EEECE8]" alt="avatar" />
               <button onClick={handleLogout} className="w-7 h-7 flex items-center justify-center rounded-lg hover:bg-[#FAF9F7] text-[#D1CFCA]">
                 <i className="fas fa-sign-out-alt text-[10px]"></i>
               </button>
@@ -330,7 +313,7 @@ setLoading(false);
                 (Object.entries(outfit) as [Category, ClothingItem][]).map(([cat, item]) => (
                   <div key={cat} className="snap-start flex-shrink-0 flex items-center gap-2 p-1.5 bg-white rounded-lg border border-[#EEECE8] min-w-[120px]">
                     <div className="w-8 h-8 bg-[#FAF9F7] rounded flex items-center justify-center p-0.5 border border-[#EEECE8]">
-                      <img src={item.imageBlob} className="max-w-full max-h-full object-contain" />
+                      <img src={item.imageBlob} className="max-w-full max-h-full object-contain" alt={item.description} />
                     </div>
                     <div className="flex-1 min-w-0">
                       <p className="text-[7px] font-bold uppercase text-[#888888] truncate">{cat}</p>
@@ -349,7 +332,7 @@ setLoading(false);
         <div className={`fixed inset-0 z-50 transition-all duration-500 ${view === 'wardrobe' ? 'translate-y-0 opacity-100' : 'translate-y-full opacity-0 pointer-events-none'}`}>
           <div className="absolute inset-0 bg-[#1A1A1A]/10 backdrop-blur-sm" onClick={() => setView('main')} />
           <div className="absolute bottom-0 left-0 right-0 h-[92vh] bg-white rounded-t-[2rem] shadow-2xl flex flex-col overflow-hidden max-w-[480px] mx-auto">
-             <Wardrobe onSelectItem={handleSelectItem} wardrobeItems={wardrobeItems} setWardrobeItems={setWardrobeItems} onBack={() => setView('main')} />
+            <Wardrobe onSelectItem={handleSelectItem} wardrobeItems={wardrobeItems} setWardrobeItems={setWardrobeItems} onBack={() => setView('main')} />
           </div>
         </div>
 
