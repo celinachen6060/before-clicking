@@ -66,19 +66,10 @@ const App: React.FC = () => {
 
   // Fetch data from Firestore on login
   const loadUserData = async (uid: string) => {
-    if (!db) return;
-    try {
-      const doc = await db.collection('users').doc(uid).collection('data').doc('current_session').get();
-      if (doc.exists) {
-        const data = doc.data();
-        if (data?.wardrobeItems) setWardrobeItems(data.wardrobeItems);
-        if (data?.outfit) setOutfit(data.outfit);
-        if (data?.baseModelImage) setBaseModelImage(data.baseModelImage);
-      }
-    } catch (e) {
-      console.error("Cloud load error:", e);
-    }
-  };
+// 强行放行：不论数据库状态如何，立刻显示主界面
+setLoading(false);
+
+};
 
   // Background Cloud Sync (Auto-save)
   useEffect(() => {
